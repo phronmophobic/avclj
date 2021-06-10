@@ -6,11 +6,14 @@
             [tech.v3.datatype.native-buffer :as native-buffer]
             [tech.v3.datatype.errors :as errors])
   (:import [java.util.concurrent ConcurrentHashMap]
-           [tech.v3.datatype.ffi Pointer]))
+           [tech.v3.datatype.ffi Pointer])
+  (:gen-class))
 
+(def my-str "hello")
 
 (defn initialize-avclj
   []
+  (println my-str)
   (libinit/initialize-avclj))
 
 
@@ -80,3 +83,5 @@
         }
        'avljc/LibAVClj nil)))
   )
+
+(defn -main [& args])

@@ -35,7 +35,7 @@
                :sync-pom true
                :aot true
                :compile-ns [avclj.main avclj.libavclj]
-               :main-class avclj.main
+               :main-class avclj.libavclj
                :jar "target/avclj-uber.jar"
                ;;Disable tensor code generation and ensure direct linking.
                :jvm-opts ["-Dtech.v3.datatype.graal-native=true"
