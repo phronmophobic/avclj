@@ -6,6 +6,7 @@
             [avclj.swscale :as swscale]
             [avclj.av-codec-ids :as codec-ids]
             [avclj.libavclj-init :as libavclj-init]
+            [avclj.libavclj]
             ;;Must be included for graal runtime support
             [tech.v3.datatype.ffi.graalvm-runtime]
             [tech.v3.datatype.ffi :as dt-ffi]
