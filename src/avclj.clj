@@ -513,6 +513,7 @@ Input data shapes: %s"
                     (raw-frame->buffers sws-frame))
                   (raw-frame->buffers frame))
                 (with-meta {:pts (frame :pts)
+                            :best-effort-timestamp (frame :best-effort-timestamp)
                             :width ((or sws-frame frame) :width)
                             :height ((or sws-frame frame) :height)
                             :linesize ((or sws-frame frame) :linesize)}))))
