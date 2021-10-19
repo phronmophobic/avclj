@@ -73,6 +73,7 @@ nil
 
 
 (defprotocol PVideoEncoder
+  (get-input-frame [enc])
   (encode-frame! [enc frame]
     "Handle a frame of data.  A frame is a persistent vector of buffers, one for
 each data plane.  If you are passing in a nio buffer, ensure to require
@@ -237,26 +238,32 @@ the next decode-frame! call"))
                   ^:unsynchronized-mutable n-frames
                   ^Map sws-ctx ^Map avfmt-ctx ^Map stream]
   PVideoEncoder
+  (get-input-frame [this]
+    (avcodec/av_frame_make_writable input-frame)
+    input-frame)
+
   (encode-frame! [this frame-data]
     (if frame-data
-      (let [_ (avcodec/av_frame_make_writable input-frame)
+      (let [
+            #_#_#_#_#_#_
+            _ (avcodec/av_frame_make_writable input-frame)
             ftens (raw-frame->buffers input-frame)
             frame-data (if (vector? frame-data)
                          frame-data
                          [frame-data])]
-        (errors/when-not-errorf
-         (== (count ftens) (count frame-data))
-         "Count of frame data tensors (%d) differs from count of encode data tensors (%d)
+        #_(errors/when-not-errorf
+           (== (count ftens) (count frame-data))
+           "Count of frame data tensors (%d) differs from count of encode data tensors (%d)
 This can happen when a planar format is chosen -- each plane is represented by one
 tensor as they have different shapes.
 Frame tensor shapes: %s
 Input data shapes: %s"
-         (count ftens)
-         (count frame-data)
-         (mapv dtype/shape ftens)
-         (mapv dtype/shape frame-data))
-        (doseq [[ftens input-tens] (map vector ftens frame-data)]
-          (dtype/copy! input-tens ftens))
+           (count ftens)
+           (count frame-data)
+           (mapv dtype/shape ftens)
+           (mapv dtype/shape frame-data))
+        #_(doseq [[ftens input-tens] (map vector ftens frame-data)]
+            (dtype/copy! input-tens ftens))
         (set! n-frames (inc n-frames))
         (if-not encoder-frame
           (do
@@ -510,9 +517,10 @@ Input data shapes: %s"
                                        0 (:height frame)
                                        (dt-ffi/struct-member-ptr sws-frame :data)
                                        (dt-ffi/struct-member-ptr sws-frame :linesize))
-                    (raw-frame->buffers sws-frame))
-                  (raw-frame->buffers frame))
+                    sws-frame #_(raw-frame->buffers sws-frame))
+                  frame #_(raw-frame->buffers frame))
                 (with-meta {:pts (frame :pts)
+                            :best-effort-timestamp (frame :best-effort-timestamp)
                             :width ((or sws-frame frame) :width)
                             :height ((or sws-frame frame) :height)
                             :linesize ((or sws-frame frame) :linesize)}))))
