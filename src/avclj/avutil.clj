@@ -19,6 +19,21 @@
    :av_dict_free {:rettype :void
                   :argtypes [['pm :pointer]]
                   :doc "Free the dict and associated keys"}
+
+   ;; int av_opt_set_int     (void *obj, const char *name, int64_t     val, int search_flags);
+   :av_opt_set_int {:rettype :int32
+                    :argtypes [['obj :pointer]
+                               ['name :string]
+                               ['val :int64]
+                               ['search-flags :int32]]}
+
+   :av_opt_set_bin {:rettype :int32
+                    :argtypes [['obj :pointer]
+                               ['name :string]
+                               ['val :pointer]
+                               ['size :int32]
+                               ['search-flags :int32]]}
+
    :av_rescale {:rettype :int64
                 :argtypes [['a :int64]
                            ['b :int64]
@@ -100,3 +115,5 @@
 (def ^{:tag 'long} AV_DICT_APPEND         32)   ;; /**< If the entry already exists, append to it.  Note that no
                                   ;;    delimiter is added, the strings are simply concatenated. */
 (def ^{:tag 'long} AV_DICT_MULTIKEY       64)   ;; /**< Allow to store several equal keys in the dictionary */
+
+(def ^{:tag 'long} AV_OPT_SEARCH_CHILDREN 1) ;; /**< Search in possible children of the given object first. */

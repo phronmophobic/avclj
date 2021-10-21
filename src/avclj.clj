@@ -56,6 +56,7 @@ nil
             [avclj.avcodec :as avcodec]
             [avclj.swscale :as swscale]
             [avclj.avformat :as avformat]
+            [avclj.avfilter :as avfilter]
             [avclj.avutil :as avutil]
             [avclj.av-pixfmt :as av-pixfmt]
             [avclj.av-error :as av-error]
@@ -74,11 +75,14 @@ nil
 
 (defprotocol PVideoEncoder
   (get-input-frame [enc])
+  (get-encoder-frame [enc])
+  (get-ctx [enc])
   (encode-frame! [enc frame]
     "Handle a frame of data.  A frame is a persistent vector of buffers, one for
 each data plane.  If you are passing in a nio buffer, ensure to require
 'tech.v3.datatype.nio-buffer` for zero-copy support.  If frame is not a persistent
-vector it is assumed to a single buffer and is wrapped in a persistent vector"))
+vector it is assumed to a single buffer and is wrapped in a persistent vector")
+  (encode-frame!* [enc frame]))
 
 
 (defprotocol PVideoDecoder
@@ -177,7 +181,7 @@ the next decode-frame! call"))
     data))
 
 
-(defn- raw-frame->buffers
+(defn raw-frame->buffers
   "Zero-copy conversion ofa frame to a vector of buffers, one for each of the
   frame's data planes."
   [^Map frame]
@@ -224,6 +228,130 @@ the next decode-frame! call"))
     (avutil/av_rescale value mult div)))
 
 
+
+(defn- transcode-filter-graph [ctx input-pix-fmt-num]
+  (let [filter-graph (avfilter/avfilter_graph_alloc)
+        buffer (avfilter/avfilter_get_by_name "buffer")
+
+        buffer-ctx (dt-ffi/make-ptr :pointer 0)
+        args (format "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d"
+                     (:width ctx)
+                     (:height ctx)
+                     input-pix-fmt-num
+                     (-> ctx :time-base :num)
+                     (-> ctx :time-base :den))
+
+        buffer-ctx (doto (avfilter/avfilter_graph_alloc_filter filter-graph buffer "src")
+                     (avfilter/avfilter_init_str (dt-ffi/string->c args)))
+
+        buffersink (avfilter/avfilter_get_by_name "buffersink")
+        buffersink-ctx-ptr (dt-ffi/make-ptr :pointer 0)
+        _ (avfilter/avfilter_graph_create_filter buffersink-ctx-ptr
+                                                 buffersink
+                                                 "sink"
+                                                 nil
+                                                 nil
+                                                 filter-graph)
+        buffersink-ctx (Pointer. (nth buffersink-ctx-ptr 0))
+
+        pix-fmts (dt-ffi/make-ptr :int32 (:pix-fmt ctx))
+        _ (avutil/av_opt_set_bin buffersink-ctx, "pix_fmts",
+                                 pix-fmts, 4,
+                                 avutil/AV_OPT_SEARCH_CHILDREN)]
+    (avfilter/avfilter_link buffer-ctx 0
+                            buffersink-ctx 0)
+
+    (avfilter/avfilter_graph_config filter-graph nil)
+
+    {:filter-graph filter-graph
+     :src buffer-ctx
+     :sink buffersink-ctx}))
+
+;; ffmpeg -i "$f" -filter_complex "scale=100:-1,split=[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" `basename "$f" .mov`".gif"
+(defn- gif-filter-graph [ctx input-pix-fmt-num]
+  (let [filter-graph (avfilter/avfilter_graph_alloc)
+        buffer (avfilter/avfilter_get_by_name "buffer")
+
+        buffer-ctx (dt-ffi/make-ptr :pointer 0)
+        args (format "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d"
+                     (:width ctx)
+                     (:height ctx)
+                     input-pix-fmt-num
+                     (-> ctx :time-base :num)
+                     (-> ctx :time-base :den))
+
+        buffer-ctx (doto (avfilter/avfilter_graph_alloc_filter filter-graph buffer "src")
+                     (avfilter/avfilter_init_str (dt-ffi/string->c args)))
+
+        split (avfilter/avfilter_get_by_name "split")
+        split-ctx-ptr (dt-ffi/make-ptr :pointer 0)
+        _ (avfilter/avfilter_graph_create_filter split-ctx-ptr
+                                                 split
+                                                 "dosplit"
+                                                 nil
+                                                 nil
+                                                 filter-graph)
+        split-ctx (Pointer. (nth split-ctx-ptr 0))
+
+        palettegen (avfilter/avfilter_get_by_name "palettegen")
+        palettegen-ctx (doto (avfilter/avfilter_graph_alloc_filter filter-graph palettegen "p")
+                         (avfilter/avfilter_init_str nil))
+
+        paletteuse (avfilter/avfilter_get_by_name "paletteuse")
+        paletteuse-ctx (doto (avfilter/avfilter_graph_alloc_filter filter-graph paletteuse "p2")
+                         (avfilter/avfilter_init_str nil))
+
+        buffersink (avfilter/avfilter_get_by_name "buffersink")
+        buffersink-ctx-ptr (dt-ffi/make-ptr :pointer 0)
+        _ (avfilter/avfilter_graph_create_filter buffersink-ctx-ptr
+                                                 buffersink
+                                                 "sink"
+                                                 nil
+                                                 nil
+                                                 filter-graph)
+        buffersink-ctx (Pointer. (nth buffersink-ctx-ptr 0))
+
+        pix-fmts (dt-ffi/make-ptr :int32 (:pix-fmt ctx))
+        _ (avutil/av_opt_set_bin buffersink-ctx, "pix_fmts",
+                                 pix-fmts, 4,
+                                 avutil/AV_OPT_SEARCH_CHILDREN)]
+    (avfilter/avfilter_link buffer-ctx 0
+                            split-ctx 0)
+    (avfilter/avfilter_link split-ctx 0
+                            palettegen-ctx 0)
+    (avfilter/avfilter_link split-ctx 1
+                            paletteuse-ctx 0)
+
+    (avfilter/avfilter_link palettegen-ctx 0
+                            paletteuse-ctx 1)
+
+
+    (avfilter/avfilter_link paletteuse-ctx 0
+                            buffersink-ctx 0)
+
+    (avfilter/avfilter_graph_config filter-graph nil)
+
+    {:filter-graph filter-graph
+     :src buffer-ctx
+     :sink buffersink-ctx}))
+
+(defn filter-frame [filter input-frame filtered-frame on-frame]
+  (avfilter/av_buffersrc_write_frame (:src filter)
+                                     input-frame)
+  (loop []
+    (let [ret (avfilter/av_buffersink_get_frame (:sink filter)
+                                                filtered-frame)]
+      (when-not (or (== ret av-error/AVERROR_EAGAIN)
+                    (== ret av-error/AVERROR_EAGAIN_MAC)
+                    (== ret av-error/AVERROR_EOF))
+
+        (on-frame filtered-frame)
+        (avcodec/av_frame_unref filtered-frame)
+        (recur))))
+
+  (when (nil? input-frame)
+    (on-frame nil)))
+
 (def ^{:tag 'long
        :private true} AV_NOPTS_VALUE (unchecked-long 0x8000000000000000))
 
@@ -232,49 +360,34 @@ the next decode-frame! call"))
                   ^long input-pixfmt ^Map input-frame
                   ^long encoder-pixfmt ^Map encoder-frame
                   ^:unsynchronized-mutable n-frames
-                  ^Map sws-ctx ^Map avfmt-ctx ^Map stream]
+                  filter-graph ^Map avfmt-ctx ^Map stream]
   PVideoEncoder
+  (get-ctx [this]
+    ctx)
+
   (get-input-frame [this]
     (avcodec/av_frame_make_writable input-frame)
     input-frame)
 
-  (encode-frame! [this frame-data]
-    (if frame-data
-      (let [
-            #_#_#_#_#_#_
-            _ (avcodec/av_frame_make_writable input-frame)
-            ftens (raw-frame->buffers input-frame)
-            frame-data (if (vector? frame-data)
-                         frame-data
-                         [frame-data])]
-        #_(errors/when-not-errorf
-           (== (count ftens) (count frame-data))
-           "Count of frame data tensors (%d) differs from count of encode data tensors (%d)
-This can happen when a planar format is chosen -- each plane is represented by one
-tensor as they have different shapes.
-Frame tensor shapes: %s
-Input data shapes: %s"
-           (count ftens)
-           (count frame-data)
-           (mapv dtype/shape ftens)
-           (mapv dtype/shape frame-data))
-        #_(doseq [[ftens input-tens] (map vector ftens frame-data)]
-            (dtype/copy! input-tens ftens))
+  (get-encoder-frame [this]
+    encoder-frame)
+
+  (encode-frame! [this input-frame]
+    (if filter-graph
+      (filter-frame filter-graph
+                    input-frame
+                    encoder-frame
+                    (fn [frame]
+                      (encode-frame!* this frame)))
+      (encode-frame!* this input-frame)))
+
+  (encode-frame!* [this encoder-frame]
+    (if encoder-frame
+      (do
         (set! n-frames (inc n-frames))
-        (if-not encoder-frame
-          (do
-            (.put input-frame :pts (dec n-frames))
-            (avcodec/avcodec_send_frame ctx input-frame))
-          (do
-            (avcodec/av_frame_make_writable encoder-frame)
-            (swscale/sws_scale sws-ctx
-                               (dt-ffi/struct-member-ptr input-frame :data)
-                               (dt-ffi/struct-member-ptr input-frame :linesize)
-                               0 (:height input-frame)
-                               (dt-ffi/struct-member-ptr encoder-frame :data)
-                               (dt-ffi/struct-member-ptr encoder-frame :linesize))
-            (.put encoder-frame :pts (dec n-frames))
-            (avcodec/avcodec_send_frame ctx encoder-frame))))
+        (do
+          (.put ^Map encoder-frame :pts (dec n-frames))
+          (avcodec/avcodec_send_frame ctx encoder-frame)))
       (avcodec/avcodec_send_frame ctx nil))
     (loop [pkt-retval (long (avcodec/avcodec_receive_packet ctx packet))]
       (when-not (or (== pkt-retval av-error/AVERROR_EAGAIN)
@@ -313,7 +426,10 @@ Input data shapes: %s"
     (avcodec/free-frame input-frame)
     (when-not (== input-pixfmt encoder-pixfmt)
       (avcodec/free-frame encoder-frame)
-      (swscale/sws_freeContext sws-ctx))
+      (avfilter/avfilter_graph_free
+       (dt-ffi/make-ptr :pointer
+                        (.address ^Pointer (:filter-graph filter-graph)))))
+
     (avformat/avio_closep (dt-ffi/struct-member-ptr avfmt-ctx :pb))
     (avformat/avformat_free_context avfmt-ctx)))
 
@@ -387,10 +503,6 @@ Input data shapes: %s"
          input-frame (avcodec/alloc-frame)
          encoder-frame (when-not (== input-pixfmt-num encoder-pixfmt-num)
                          (avcodec/alloc-frame))
-         sws-ctx (when encoder-frame
-                   (swscale/sws_getContext width height input-pixfmt-num
-                                           width height encoder-pixfmt-num
-                                           swscale/SWS_BILINEAR nil nil nil))
          stream (avformat/new-stream avfmt-ctx codec-ptr)
          framerate (dt-struct/new-struct :av-rational)
          time-base (dt-struct/new-struct :av-rational)]
@@ -411,39 +523,45 @@ Input data shapes: %s"
        (.put encoder-frame :format encoder-pixfmt-num)
        (.put encoder-frame :width width)
        (.put encoder-frame :height height))
-     (try
-       (let [opt-dict (when (seq codec-options)
-                        (log/infof "Codec Options: %s" (pr-str codec-options))
-                        (let [dict (avutil/alloc-dict)]
-                          (doseq [[k v] codec-options]
-                            (avutil/set-key-value! dict k v 0))))]
-         (when (seq codec-private-options)
-           (log/infof "Codec Private Options: %s" codec-private-options)
-           (doseq [[k v] codec-private-options]
-             (avcodec/av_opt_set (Pointer. (:priv-data ctx)) k v 0)))
-         (avcodec/avcodec_open2 ctx codec-ptr opt-dict))
-       (avcodec/avcodec_parameters_from_context
-        (Pointer. (:codecpar stream)) ctx)
-       (.put stream :avg-frame-rate framerate)
-       (.put stream :time-base time-base)
-       ;;!!This sets the time-base of the stream!!
-       (avformat/avformat_write_header avfmt-ctx nil)
-       ;;allocate framebuffer
-       ;;We do not care about alignment
-       (avcodec/av_frame_get_buffer input-frame 0)
-       (when encoder-frame (avcodec/av_frame_get_buffer encoder-frame 0))
-       (Encoder. ctx pkt
-                 input-pixfmt-num input-frame
-                 encoder-pixfmt-num encoder-frame
-                 0 sws-ctx avfmt-ctx stream)
-       (catch Throwable e
-         (avcodec/free-context ctx)
-         (avcodec/free-packet pkt)
-         (avcodec/free-frame input-frame)
-         (avformat/avformat_free_context avfmt-ctx)
-         (when encoder-frame (avcodec/free-frame encoder-frame))
-         (when sws-ctx (swscale/sws_freeContext sws-ctx))
-         (throw e)))))
+     (let [filter-graph (when encoder-frame
+                          (if (= (av-pixfmt/pixfmt->value "AV_PIX_FMT_PAL8")
+                                 (:pix-fmt ctx))
+                            (gif-filter-graph ctx input-pixfmt-num)
+                            (transcode-filter-graph ctx input-pixfmt-num)))]
+       (try
+         (let [opt-dict (when (seq codec-options)
+                          (log/infof "Codec Options: %s" (pr-str codec-options))
+                          (let [dict (avutil/alloc-dict)]
+                            (doseq [[k v] codec-options]
+                              (avutil/set-key-value! dict k v 0))))]
+           (when (seq codec-private-options)
+             (log/infof "Codec Private Options: %s" codec-private-options)
+             (doseq [[k v] codec-private-options]
+               (avcodec/av_opt_set (Pointer. (:priv-data ctx)) k v 0)))
+           (avcodec/avcodec_open2 ctx codec-ptr opt-dict))
+        (avcodec/avcodec_parameters_from_context
+         (Pointer. (:codecpar stream)) ctx)
+        (.put stream :avg-frame-rate framerate)
+        (.put stream :time-base time-base)
+        ;;!!This sets the time-base of the stream!!
+        (avformat/avformat_write_header avfmt-ctx nil)
+        ;;allocate framebuffer
+        ;;We do not care about alignment
+        (avcodec/av_frame_get_buffer input-frame 0)
+        (when encoder-frame (avcodec/av_frame_get_buffer encoder-frame 0))
+        (let []
+          (Encoder. ctx pkt
+                    input-pixfmt-num input-frame
+                    encoder-pixfmt-num encoder-frame
+                    0 filter-graph avfmt-ctx stream))
+        (catch Throwable e
+          (avcodec/free-context ctx)
+          (avcodec/free-packet pkt)
+          (avcodec/free-frame input-frame)
+          (avformat/avformat_free_context avfmt-ctx)
+          (when encoder-frame (avcodec/free-frame encoder-frame))
+          (when filter-graph (swscale/sws_freeContext filter-graph))
+          (throw e))))))
   (^java.lang.AutoCloseable
    [height width output-fname]
    (make-video-encoder height width output-fname nil)))
