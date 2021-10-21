@@ -135,27 +135,13 @@ See https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/avformat.h#L2160"}
                  :doc "Close a pointer to a pointer to the avio context"}
    })
 
-
-(defonce avformat (dt-ffi/library-singleton #'avformat-def))
-(dt-ffi/library-singleton-reset! avformat)
-(defn set-library-instance!
-  [lib-instance]
-  (dt-ffi/library-singleton-set-instance! avformat lib-instance))
-
-
-(defn initialize!
-  []
-  (dt-ffi/library-singleton-set! avformat "avformat"))
-
-
 (def ^{:tag 'long} AVIO_FLAG_READ  1)
 (def ^{:tag 'long} AVIO_FLAG_WRITE 2)
 (def ^{:tag 'long} AVIO_FLAG_READ_WRITE 3)
 
-(defn find-fn [fn-name] (dt-ffi/library-singleton-find-fn avformat fn-name))
-
-
-(dt-ffi/define-library-functions avclj.avformat/avformat-def find-fn check-error)
+(dt-ffi/define-library-interface avformat-def
+  :check-error check-error
+  :libraries ["avformat"])
 
 
 (defn alloc-output-context

@@ -36,21 +36,9 @@
 
    })
 
-
-
-(defonce lib (dt-ffi/library-singleton #'avutil-def))
-(dt-ffi/library-singleton-reset! lib)
-(defn set-library-instance!
-  [lib-instance]
-  (dt-ffi/library-singleton-set-instance! lib lib-instance))
-
-(defn initialize!
-  []
-  (dt-ffi/library-singleton-set! lib "avutil"))
-
-(defn find-fn [fn-name] (dt-ffi/library-singleton-find-fn lib fn-name))
-
-(dt-ffi/define-library-functions avclj.avutil/avutil-def find-fn check-error)
+(dt-ffi/define-library-interface avutil-def
+  :libraries ["avutil"]
+  :check-error check-error)
 
 
 (defn alloc-dict

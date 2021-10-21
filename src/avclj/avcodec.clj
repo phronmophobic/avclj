@@ -167,22 +167,6 @@ Returns: 0 on success, otherwise negative error code:
                     :doc "Unreference all the buffers referenced by frame and reset the frame fields."
                     }})
 
-
-(defonce ^:private lib (dt-ffi/library-singleton #'avcodec-fns))
-(defn set-library-instance!
-  [lib-instance]
-  (dt-ffi/library-singleton-set-instance! lib lib-instance))
-
-;;Safe to call on uninitialized library.  If the library is initialized, however,
-;;a new library instance is created from the latest avcodec-fns
-(dt-ffi/library-singleton-reset! lib)
-
-
-(defn- find-avcodec-fn
-  [fn-kwd]
-  (dt-ffi/library-singleton-find-fn lib fn-kwd))
-
-
 (declare str-error)
 
 
@@ -198,7 +182,9 @@ Returns: 0 on success, otherwise negative error code:
      error-val#))
 
 
-(dt-ffi/define-library-functions avclj.avcodec/avcodec-fns find-avcodec-fn check-error)
+(dt-ffi/define-library-interface avcodec-fns
+  :check-error check-error
+  :libraries ["avcodec"])
 
 
 (defn str-error
@@ -211,16 +197,6 @@ Returns: 0 on success, otherwise negative error code:
           (format "Unreconized error num: %s" error-num)))
       (finally
         (native-buffer/free charbuf)))))
-
-
-(defn initialize!
-  []
-  (if (nil? (dt-ffi/library-singleton-library lib))
-    (do
-      (dt-ffi/library-singleton-set! lib "avcodec")
-      :ok)
-    :already-initialized))
-
 
 (defn- read-codec-pixfmts
   [^long addr]

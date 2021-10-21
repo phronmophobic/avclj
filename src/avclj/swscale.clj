@@ -83,25 +83,9 @@
                      :argtypes [['swsContext :pointer]]}})
 
 
-(defonce lib (dt-ffi/library-singleton #'swscale-def))
-(dt-ffi/library-singleton-reset! lib)
-(defn set-library-instance!
-  [lib-instance]
-  (dt-ffi/library-singleton-set-instance! lib lib-instance))
-
-
-(defn initialize!
-  []
-  (if (dt-ffi/library-singleton-library lib)
-    :already-initialized
-    (dt-ffi/library-singleton-set! lib "swscale")))
-
-(defn get-sws-fn
-  [fn-name]
-  (dt-ffi/library-singleton-find-fn lib fn-name))
-
-(dt-ffi/define-library-functions
-  avclj.swscale/swscale-def get-sws-fn avcodec/check-error)
+(dt-ffi/define-library-interface swscale-def
+  :libraries ["swscale"]
+  :check-error avcodec/check-error)
 
 
 (def constants
