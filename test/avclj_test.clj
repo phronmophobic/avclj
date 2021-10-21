@@ -41,7 +41,16 @@
                          {:encoder-name encoder-name
                           :bit-rate 600000})]
       (dotimes [iter 600]
-        (avclj/encode-frame! encoder (img-tensor [256 256 3] iter))))
+        (let [input-frame (avclj/get-input-frame encoder)
+              ftens (avclj/raw-frame->buffers input-frame)
+              frame-data (img-tensor [256 256 3] iter)
+              frame-data (if (vector? frame-data)
+                           frame-data
+                           [frame-data])]
+          (doseq [[ftens input-tens] (map vector ftens frame-data)]
+            (dtype/copy! input-tens ftens))
+
+          (avclj/encode-frame! encoder input-frame))))
     (is (.exists (java.io.File. output-fname)))
     (let [frame-count
           (with-open [decoder (avclj/make-video-decoder "test/data/test-video.mp4")]
