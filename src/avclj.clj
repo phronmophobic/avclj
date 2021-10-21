@@ -100,6 +100,12 @@ the next decode-frame! call"))
   (if (dt-ffi/find-library "x264")
     (log/debug "h264 encoding enabled")
     (log/debug "h264 encoding disabled"))
+  (dt-ffi/find-library "avcodec")
+  (dt-ffi/find-library "swscale")
+  (dt-ffi/find-library "avformat")
+  (dt-ffi/find-library "avutil")
+  (dt-ffi/find-library "avfilter")
+
   :ok)
 
 
