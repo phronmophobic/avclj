@@ -133,11 +133,73 @@ See https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/avformat.h#L2160"}
                  :argtypes [['s-ptr :pointer]]
                  :check-errors? true
                  :doc "Close a pointer to a pointer to the avio context"}
+
+   ;; int avformat_seek_file(AVFormatContext *s, int stream_index, int64_t min_ts, int64_t ts, int64_t max_ts, int flags);
+   :avformat_seek_file {:rettype :int32
+                        :argtypes [['s-ptr :pointer]
+                                   ['stream-index :int32]
+                                   ['min_ts :int64]
+                                   ['ts :int64]
+                                   ['max_ts :int64]
+                                   ['flags :int32]]
+                        :check-errors? true
+                        :doc "Seek to timestamp ts.
+Seeking will be done so that the point from which all active streams
+can be presented successfully will be closest to ts and within min/max_ts.
+Active streams are all streams that have AVStream.discard < AVDISCARD_ALL.
+
+If flags contain AVSEEK_FLAG_BYTE, then all timestamps are in bytes and
+are the file position (this may not be supported by all demuxers).
+If flags contain AVSEEK_FLAG_FRAME, then all timestamps are in frames
+in the stream with stream_index (this may not be supported by all demuxers).
+Otherwise all timestamps are in units of the stream selected by stream_index
+or if stream_index is -1, in AV_TIME_BASE units.
+If flags contain AVSEEK_FLAG_ANY, then non-keyframes are treated as
+keyframes (this may not be supported by all demuxers).
+If flags contain AVSEEK_FLAG_BACKWARD, it is ignored.
+
+@param s media file handle
+@param stream_index index of the stream which is used as time base reference
+@param min_ts smallest acceptable timestamp
+@param ts target timestamp
+@param max_ts largest acceptable timestamp
+@param flags flags
+@return >=0 on success, error code otherwise
+
+@note This is part of the new seek API which is still under construction."
+                        }
+   
+
+   :av_seek_frame {:rettype :int32
+                   :argtypes [['s-ptr :pointer]
+                              ['stream-index :int32]
+                              ['timestamp :int64]
+                              ['flags :int32]]
+                   :check-errors? true
+                   :doc "Seek to the keyframe at timestamp.
+'timestamp' in 'stream_index'.
+
+@param s media file handle
+@param stream_index If stream_index is (-1), a default
+stream is selected, and timestamp is automatically converted
+from AV_TIME_BASE units to the stream specific time_base.
+@param timestamp Timestamp in AVStream.time_base units
+       or, if no stream is specified, in AV_TIME_BASE units.
+@param flags flags which select direction and seeking mode
+@return >= 0 on success"}
+
    })
 
 (def ^{:tag 'long} AVIO_FLAG_READ  1)
 (def ^{:tag 'long} AVIO_FLAG_WRITE 2)
 (def ^{:tag 'long} AVIO_FLAG_READ_WRITE 3)
+
+(def ^{:tag 'long} AVSEEK_FLAG_BACKWARD "seek backward" 1)
+(def ^{:tag 'long} AVSEEK_FLAG_BYTE "seeking based on position in bytes" 2)
+(def ^{:tag 'long} AVSEEK_FLAG_ANY "seek to any frame, even non-keyframes" 4)
+(def ^{:tag 'long} AVSEEK_FLAG_FRAME "seeking based on frame number" 8)
+
+
 
 (dt-ffi/define-library-interface avformat-def
   :check-error check-error
