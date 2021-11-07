@@ -86,6 +86,7 @@ vector it is assumed to a single buffer and is wrapped in a persistent vector")
 
 
 (defprotocol PVideoDecoder
+  (->map [decoder])
   (decode-frame! [decoder]
     "Decode a frame returning a persistent vector of buffers, one for each data plane
 in the frame.  When this function returns nil there are no more frames to decode.
@@ -597,6 +598,16 @@ the next decode-frame! call"))
        (avformat/avformat_close_input ctx-ptr))))
 
   PVideoDecoder
+  (->map [this]
+    {:fmt-ctx fmt-ctx
+     :decoder-ctx decoder-ctx
+     :pkt pkt
+     :frame frame
+     :stream-index stream-index
+     :sws-ctx sws-ctx
+     :sws-frame sws-frame
+     :metadata metadata}
+    )
   (decode-frame! [this]
     (when (or (identical? :decoding frame-stage)
               (identical? :finalizing frame-stage))
